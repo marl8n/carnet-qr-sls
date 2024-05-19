@@ -1,0 +1,123 @@
+service: carnet-qr-sls
+frameworkVersion: "3"
+
+provider:
+  name: aws
+  runtime: python3.9
+  environment:
+    DYNAMODB_TABLE: ${self:service}-${sls:stage}
+    S3_BUCKET: ${self:service}-${sls:stage}
+  httpApi:
+    cors: true
+  iam:
+    role:
+      statements:
+        - Effect: Allow
+          Action:
+            - dynamodb:Query
+            - dynamodb:Scan
+            - dynamodb:GetItem
+            - s3:PutBucketPolicy
+            - s3:GetBucketPolicy
+            - s3:DeleteBucketPolicy
+          Resource: "*"
+
+plugins:
+  - serverless-offline
+  - serverless-dynamodb-local
+
+package:
+  individually: true
+  patterns:
+    - "!*/**"
+    - utils/**
+    - app/**
+    - qrcode/**
+
+custom:
+  dynamodb:
+    stages:
+      - dev
+    start:
+      port: 8000
+      inMemory: true
+      migrate: true
+
+functions:
+  create:
+    handler: app/create.create
+    events:
+      - httpApi:
+          path: /app
+          method: post
+
+  list:
+    handler: app/list.list
+    events:
+      - httpApi:
+          path: /app
+          method: get
+
+  get:
+    handler: app/get.get
+    events:
+      - httpApi:
+          path: /app/{id}
+          method: get
+
+  update:
+    handler: app/update.update
+    events:
+      - httpApi:
+          path: /app/{id}
+          method: put
+
+  delete:
+    handler: app/delete.delete
+    events:
+      - httpApi:
+          path: /app/{id}
+          method: delete
+
+resources:
+  Resources:
+    StudentsDynamoDbTable:
+      Type: "AWS::DynamoDB::Table"
+      Properties:
+        TableName: ${self:provider.environment.DYNAMODB_TABLE}
+        AttributeDefinitions:
+          - AttributeName: pk
+            AttributeType: S
+        KeySchema:
+          - AttributeName: pk
+            KeyType: HASH
+        ProvisionedThroughput:
+          ReadCapacityUnits: 1
+          WriteCapacityUnits: 1
+
+    S3Bucket:
+      Type: "AWS::S3::Bucket"
+      Properties:
+        BucketName: ${self:provider.environment.S3_BUCKET}
+        PublicAccessBlockConfiguration:
+          BlockPublicAcls: false
+          IgnorePublicAcls: false
+          BlockPublicPolicy: false
+          RestrictPublicBuckets: false
+
+    SampleBucketPolicy:
+      Type: "AWS::S3::BucketPolicy"
+      Properties:
+        Bucket: !Ref S3Bucket
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+            - Effect: Allow
+              Action:
+                - "s3:GetObject"
+              Resource: !Join
+                - ""
+                - - "arn:aws:s3:::"
+                  - !Ref S3Bucket
+                  - /*
+              Principal: "*"
